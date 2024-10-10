@@ -13,12 +13,12 @@ satellite_positions = [(np.random.uniform(-3000, 3000), np.random.uniform(1000, 
 user_position = [np.random.uniform(-coverage_radius, coverage_radius), 
                  np.random.uniform(2000 - coverage_radius, 2000 + coverage_radius)]
 
-# 위성의 이동 속도를 랜덤으로 설정 (단위: km/s)
+# 위성의 속도를 랜덤으로 설정 (7.0 ~ 8.0 km/s)
 satellite_speeds = np.random.uniform(7.0, 8.0, num_satellites)  # km/s 속도
 speed_multiplier = 5  # 속도 증가 배율
 satellite_speeds *= speed_multiplier
 
-# 위성의 이동 방향을 랜덤으로 설정
+# 위성의 이동 방향을 설정 (위성은 사용자를 지나감)
 directions = [np.random.rand(2) for _ in range(num_satellites)]
 directions = [dir / np.linalg.norm(dir) for dir in directions]  # 방향 벡터 정규화
 
@@ -49,6 +49,11 @@ def calculate_signal_strength(satellite_pos, user_pos):
 def update_positions(positions, directions, speeds, dt):
     return [(pos[0] + dir[0] * speed * dt, pos[1] + dir[1] * speed * dt) 
             for pos, dir, speed in zip(positions, directions, speeds)]
+
+# 핸드오버 수행 여부를 판단하는 함수
+def is_in_coverage(satellite_pos, user_pos):
+    distance = np.sqrt((satellite_pos[0] - user_pos[0])**2 + (satellite_pos[1] - user_pos[1])**2)
+    return distance <= coverage_radius
 
 # 2D 시뮬레이션 애니메이션 설정
 fig, ax = plt.subplots(figsize=(10, 10))
@@ -89,15 +94,20 @@ def update(frame):
     # 핸드오버 점수 계산 (가용 시간과 자원의 가중치)
     handover_scores = [available_times[i] * time_weight + available_resources[i] * resource_weight 
                        for i in range(num_satellites)]
-    
-    # 핸드오버할 위성 선택
-    closest_satellite_idx = np.argmax(handover_scores)
-    closest_satellite_position = satellite_positions[closest_satellite_idx]
 
-    # 사용자와 핸드오버될 위성 간의 연결선 (직선으로 표시)
-    ax.plot([user_position[0], closest_satellite_position[0]], 
-            [user_position[1], closest_satellite_position[1]], 
-            'k--', label='Handover Connection')
+    # 셀 안에 있는 위성만 핸드오버 후보로 고려
+    in_coverage = [i for i in range(num_satellites) if is_in_coverage(satellite_positions[i], user_position)]
+    
+    if in_coverage:
+        # 핸드오버할 위성 선택
+        handover_scores = [handover_scores[i] for i in in_coverage]
+        closest_satellite_idx = in_coverage[np.argmax(handover_scores)]
+        closest_satellite_position = satellite_positions[closest_satellite_idx]
+
+        # 사용자와 핸드오버될 위성 간의 연결선 (직선으로 표시)
+        ax.plot([user_position[0], closest_satellite_position[0]], 
+                [user_position[1], closest_satellite_position[1]], 
+                'k--', label='Handover Connection')
 
     # 각 위성의 위치와 가용 시간 및 신호 세기 표시
     for i, pos in enumerate(satellite_positions):
