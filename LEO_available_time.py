@@ -1,99 +1,142 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
-# 한글 폰트 설정
-plt.rcParams['font.family'] = 'Malgun Gothic'
-plt.rcParams['axes.unicode_minus'] = False
+# 위성의 수와 커버리지 반경 설정
+num_satellites = 5
+coverage_radius = 1000  # km (위성의 셀 반경)
 
-# LEO 위성의 임의 속도 (km/s)
-v_LEO = 7.5  # 예: LEO 위성의 평균 속도
+# 위성의 초기 2D 위치 좌표를 랜덤으로 설정
+satellite_positions = [(np.random.uniform(-3000, 3000), np.random.uniform(1000, 3000)) for _ in range(num_satellites)]
 
-# 셀 반경 (km)
-r_cell = 500  # 위성 셀의 반경
+# 사용자 위치를 임의의 LEO 셀 안에 배치
+user_position = [np.random.uniform(-coverage_radius, coverage_radius),
+                 np.random.uniform(2000 - coverage_radius, 2000 + coverage_radius)]
 
-def calculate_entry_exit_distance(d_center):
-    """LEO 셀 내부에서 UE가 통과하는 거리 계산."""
-    return 2 * np.sqrt(r_cell**2 - d_center**2)
+# 위성의 속도와 방향을 딕셔너리로 설정
+satellites = {
+    f'LEO {i + 1}': {
+        'position': satellite_positions[i],
+        'speed': np.random.uniform(7.0, 8.0) * 5,  # km/s
+        'direction': np.random.rand(2)
+    } for i in range(num_satellites)
+}
 
-def calculate_available_time(entry_exit_distance):
-    """가용 시간 계산 (초)."""
-    return entry_exit_distance / v_LEO
+# 방향 벡터 정규화
+for satellite in satellites.values():
+    satellite['direction'] /= np.linalg.norm(satellite['direction'])
 
-def create_circle(radius, num_points=100):
-    """주어진 반경의 원을 생성."""
-    theta = np.linspace(0, 2 * np.pi, num_points)
-    x = radius * np.cos(theta)
-    y = radius * np.sin(theta)
-    return x, y
+# 위성의 Available Resources (가용 리소스) 가정
+available_resources = np.random.uniform(0.5, 1.0, num_satellites)  # 50% ~ 100% 자원
 
-def create_leo_path():
-    """LEO 위성의 진행 경로 생성."""
-    leo_x = np.linspace(-r_cell - 300, r_cell + 300, 100)
-    leo_y = 0.2 * leo_x  # Y축으로 약간 기울어짐 (기울기 0.2)
-    return leo_x, leo_y
+# 핸드오버를 결정할 때 가용 리소스 및 가용 시간 기준 가중치 설정
+resource_weight = 0.6
+time_weight = 0.4
 
-def create_ue_path(ue_x_entry, ue_x_exit, d_center):
-    """UE의 진행 경로 생성 (LEO 진행 방향에 맞춰 평행)."""
-    ue_x = np.linspace(ue_x_entry, ue_x_exit, 100)
-    ue_y = 0.2 * ue_x + d_center  # LEO 진행 방향과 평행
-    return ue_x, ue_y
+# 사용자와의 가용 시간을 계산하는 함수
+def calculate_available_time(satellite_pos, user_pos, speed, direction):
+    distance = np.sqrt((satellite_pos[0] - user_pos[0])**2 + (satellite_pos[1] - user_pos[1])**2)
+    relative_speed = speed * np.dot(direction, [(user_pos[0] - satellite_pos[0]) / distance,
+                                                (user_pos[1] - satellite_pos[1]) / distance])
+    if relative_speed > 0:
+        available_time = (coverage_radius - distance) / relative_speed
+    else:
+        available_time = 0
+    return max(available_time, 0)
 
-def plot_graph(circle_x, circle_y, ue_x, ue_y, leo_x, leo_y, entry_exit_distance, t_available, ue_start_x, ue_start_y):
-    """그래프 그리기."""
-    plt.figure(figsize=(8, 8))
-    
-    # LEO 셀 경계 그리기
-    plt.plot(circle_x, circle_y, label="LEO 셀 경계", color="blue")
+# 신호 세기를 계산하는 함수 (단순히 거리의 역수로 가정)
+def calculate_signal_strength(satellite_pos, user_pos):
+    distance = np.sqrt((satellite_pos[0] - user_pos[0])**2 + (satellite_pos[1] - user_pos[1])**2)
+    return 1 / distance if distance != 0 else float('inf')
 
-    # UE 진행 경로 그리기
-    plt.plot(ue_x, ue_y, label="UE 진행 경로", color="red", linestyle='--')
+# 위성의 위치 업데이트 함수
+def update_positions(satellites, dt):
+    for satellite in satellites.values():
+        satellite['position'] = (
+            satellite['position'][0] + satellite['direction'][0] * satellite['speed'] * dt,
+            satellite['position'][1] + satellite['direction'][1] * satellite['speed'] * dt
+        )
 
-    # LEO 위성 진행 경로 그리기
-    plt.plot(leo_x, leo_y, label="LEO 위성 진행 경로 (기울기 있음)", color="purple", linestyle='-.')
+# 핸드오버 수행 여부를 판단하는 함수
+def is_in_coverage(satellite_pos, user_pos):
+    distance = np.sqrt((satellite_pos[0] - user_pos[0])**2 + (satellite_pos[1] - user_pos[1])**2)
+    return distance <= coverage_radius
 
-    # LEO 셀 중심 및 UE 시작 위치 표시
-    plt.scatter([0], [0], color="blue", label="LEO 셀 중심")
-    plt.scatter([ue_start_x], [ue_start_y], color="green", label="UE 시작 위치 (셀 외부)")
+# 2D 시뮬레이션 애니메이션 설정
+fig, ax = plt.subplots(figsize=(10, 10))
+text_box = None
 
-    # 결과 출력 값을 그래프에 표시
-    plt.text(0, 10, f"가용 시간: {t_available:.2f} 초", fontsize=10, ha='center', color='black')
+# 위성 커버리지를 그리는 함수
+def draw_coverage(ax, positions):
+    for pos in positions:
+        circle = plt.Circle(pos, coverage_radius, color='blue', alpha=0.3)
+        ax.add_artist(circle)
 
-    # 그래프 범위 및 설정
-    plt.xlim(-r_cell - 400, r_cell + 400)
-    plt.ylim(-r_cell - 400, r_cell + 400)
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.title("UE와 LEO 위성의 경로 (기울어진 LEO 위성)")
-    plt.xlabel("X (km)")
-    plt.ylabel("Y (km)")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+# 시뮬레이션 애니메이션 프레임을 업데이트하는 함수
+def update(frame):
+    global satellites, text_box
 
-def main():
-    # UE가 셀 중심에서 떨어진 최소 거리 (km)
-    d_center = 200  # UE의 경로가 셀 중심에서 떨어진 거리
+    ax.clear()
+    ax.set_xlim([user_position[0] - 3000, user_position[0] + 3000])
+    ax.set_ylim([user_position[1] - 3000, user_position[1] + 3000])
+    ax.set_xlabel('X (km)')
+    ax.set_ylabel('Y (km)')
+    ax.set_title('2D LEO Satellite Handover Simulation')
 
-    # LEO 위성의 셀을 지나가는 경로 길이 계산
-    entry_exit_distance = calculate_entry_exit_distance(d_center)
+    # 위성 이동 업데이트
+    update_positions(satellites, 1)
 
-    # 가용 시간 계산 (초)
-    t_available = calculate_available_time(entry_exit_distance)
+    # 위성 커버리지 그리기
+    draw_coverage(ax, [satellite['position'] for satellite in satellites.values()])
 
-    # 결과 출력
-    print(f"LEO 셀 내부에서 UE가 통과하는 거리: {entry_exit_distance:.2f} km")
-    print(f"UE가 셀 내부에 머무는 시간 (가용 시간): {t_available:.2f} 초")
+    # 사용자 위치를 표시 (고정된 위치)
+    ax.scatter(user_position[0], user_position[1], color='black', s=100, label='User (Fixed Position)')
 
-    # 좌표 설정
-    circle_x, circle_y = create_circle(r_cell)
-    leo_x, leo_y = create_leo_path()
+    # 사용자와 위성 간의 가용 시간 및 신호 세기 계산
+    available_times = [calculate_available_time(satellite['position'], user_position, satellite['speed'], satellite['direction'])
+                       for satellite in satellites.values()]
+    signal_strengths = [calculate_signal_strength(satellite['position'], user_position)
+                        for satellite in satellites.values()]
 
-    # UE의 진행 경로 (LEO 진행 방향에 맞춰 평행하게 설정)
-    ue_x_entry = -r_cell - 300  # UE가 셀 외부에서 시작하는 X 좌표
-    ue_x_exit = r_cell + 300    # UE가 셀을 통과하여 나가는 X 좌표
-    ue_x, ue_y = create_ue_path(ue_x_entry, ue_x_exit, d_center)
+    # 핸드오버 점수 계산 (가용 시간과 자원의 가중치)
+    handover_scores = [available_times[i] * time_weight + available_resources[i] * resource_weight
+                       for i in range(num_satellites)]
 
-    # 그래프 그리기
-    plot_graph(circle_x, circle_y, ue_x, ue_y, leo_x, leo_y, entry_exit_distance, t_available, ue_x_entry, 0.2 * ue_x_entry + d_center)
+    # 셀 안에 있는 위성만 핸드오버 후보로 고려
+    in_coverage = [i for i in range(num_satellites) if is_in_coverage(satellites[f'LEO {i + 1}']['position'], user_position)]
 
-if __name__ == "__main__":
-    main()
+    if in_coverage:
+        # 핸드오버할 위성 선택 (가장 긴 가용 시간)
+        longest_available_time_idx = in_coverage[np.argmax([available_times[i] for i in in_coverage])]
+        handover_satellite = f'LEO {longest_available_time_idx + 1}'
+        handover_time = available_times[longest_available_time_idx]
+
+        # 콘솔에 핸드오버 정보 출력
+        print(f'Handover to {handover_satellite} with available time {handover_time:.2f}s')
+
+        # 사용자와 핸드오버될 위성 간의 연결선 (빨간색으로 표시)
+        ax.plot([user_position[0], satellites[handover_satellite]['position'][0]],
+                [user_position[1], satellites[handover_satellite]['position'][1]],
+                'r-', label='Handover Connection')
+
+    # 각 위성의 위치와 가용 시간 및 신호 세기 표시
+    for i, (satellite_name, satellite) in enumerate(satellites.items()):
+        ax.scatter(satellite['position'][0], satellite['position'][1], color='blue', s=100, label=satellite_name)
+        ax.text(satellite['position'][0], satellite['position'][1], satellite_name, fontsize=12, ha='right')
+
+    # 오른쪽 상단에 값 업데이트
+    textstr = '\n'.join([f'{satellite_name}: AT={available_times[i]:.2f}s, Res={available_resources[i]:.2f}'
+                         for i, satellite_name in enumerate(satellites.keys())])
+    props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+
+    if text_box:
+        text_box.remove()
+    text_box = ax.text(0.95, 0.95, textstr, transform=ax.transAxes, fontsize=10,
+                       verticalalignment='top', horizontalalignment='right', bbox=props)
+
+    plt.legend(loc='upper right')
+
+# 애니메이션 설정
+ani = animation.FuncAnimation(fig, update, frames=100, interval=200, repeat=False)
+
+plt.show()
