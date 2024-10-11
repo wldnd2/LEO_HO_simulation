@@ -32,15 +32,17 @@ theta = np.linspace(0, 2 * np.pi, 100)
 circle_x = r_cell * np.cos(theta)
 circle_y = r_cell * np.sin(theta)
 
-# LEO 위성의 진행 경로 (X축을 따라 직선 이동)
+# LEO 위성의 진행 경로 (기울기 설정)
 leo_x = np.linspace(-r_cell - 300, r_cell + 300, 100)
-leo_y = np.zeros_like(leo_x)  # LEO가 x축을 따라 직선 이동
+leo_y = 0.2 * leo_x  # Y축으로 약간 기울어짐 (기울기 0.2)
 
-# UE의 진행 경로 (셀 외부에서 내부로 진입, 셀을 통과하는 직선 경로)
+# UE의 진행 경로 (LEO 진행 방향에 맞춰 평행하게 설정)
 ue_x_entry = -r_cell - 300  # UE가 셀 외부에서 시작하는 X 좌표
 ue_x_exit = r_cell + 300    # UE가 셀을 통과하여 나가는 X 좌표
 ue_x = np.linspace(ue_x_entry, ue_x_exit, 100)
-ue_y = np.full_like(ue_x, d_center)  # UE는 셀 중심에서 d_center만큼 떨어진 직선으로 이동
+
+# UE의 Y좌표를 LEO의 기울기에 맞춰 조정
+ue_y = 0.2 * ue_x + d_center  # LEO 진행 방향과 평행
 
 # 그래프 그리기
 plt.figure(figsize=(8, 8))
@@ -52,17 +54,20 @@ plt.plot(circle_x, circle_y, label="LEO 셀 경계", color="blue")
 plt.plot(ue_x, ue_y, label="UE 진행 경로", color="red", linestyle='--')
 
 # LEO 위성 진행 경로 그리기
-plt.plot(leo_x, leo_y, label="LEO 위성 진행 경로", color="purple", linestyle='-.')
+plt.plot(leo_x, leo_y, label="LEO 위성 진행 경로 (기울기 있음)", color="purple", linestyle='-.')
 
 # LEO 셀 중심 및 UE 시작 위치 표시
 plt.scatter([0], [0], color="blue", label="LEO 셀 중심")
-plt.scatter([ue_x_entry], [d_center], color="green", label="UE 시작 위치 (셀 외부)")
+plt.scatter([ue_x_entry], [0.2 * ue_x_entry + d_center], color="green", label="UE 시작 위치 (셀 외부)")
+
+# 결과 출력 값을 그래프에 표시
+plt.text(0, 10, f"가용 시간: {t_available:.2f} 초", fontsize=10, ha='center', color='black')
 
 # 그래프 범위 및 설정
 plt.xlim(-r_cell - 400, r_cell + 400)
 plt.ylim(-r_cell - 400, r_cell + 400)
 plt.gca().set_aspect('equal', adjustable='box')
-plt.title("UE와 LEO 위성의 경로")
+plt.title("UE와 LEO 위성의 경로 (기울어진 LEO 위성)")
 plt.xlabel("X (km)")
 plt.ylabel("Y (km)")
 plt.legend()
