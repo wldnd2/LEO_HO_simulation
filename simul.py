@@ -130,3 +130,5 @@ def update(frame):
 ani = animation.FuncAnimation(fig, update, frames=100, interval=200, repeat=False)
 
 plt.show()
+
+# test
